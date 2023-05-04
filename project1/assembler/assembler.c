@@ -5,9 +5,24 @@
 #include <string.h>
 
 #define MAXLINELENGTH 1000
+#define MAX_LABEL_SIZE 6
 
 int readAndParse(FILE *, char *, char *, char *, char *, char *);
-int isNumber(char *);
+int isNumber(char *, int *);
+int getFileSize(FILE* fp);
+void addLabel(char* label, int lineCount);
+int labelToNumeric(char* label);
+int getRtypeRegisters(char* a0, char* a1, char* a2, int* r0, int* r1, int* r2);
+int getRtypeInstruction(int opcode, int regA, int regB, int destReg);
+int getItypeRegisters(char* a0, char* a1, char* a2, int* r0, int* r1, int* r2, int);
+int getItypeInstruction(int opcode, int regA, int regB, int offsetField);
+int getJtypeRegisters(char* a0, char* a1, int* r0, int* r1);
+int getJtypeInstruction(int opcode, int regA, int regB);
+int getOtypeInstruction(int opcode);
+int getFillRegister(char* a0, int* r0);
+
+char* labelArray;
+int labelCount, maxLabelCount;
 
 int main(int argc, char *argv[]) 
 {
@@ -36,13 +51,23 @@ int main(int argc, char *argv[])
 		exit(1);
 	}
 
-	/* here is an example for how to use readAndParse to read a line from
-		 inFilePtr */
-	if (!readAndParse(inFilePtr, label, opcode, arg0, arg1, arg2)) {
-		/* reached end of file */
-	}
-
 	/* TODO: Phase-1 label calculation */
+	int fileSize = getFileSize(inFilePtr);
+	maxLabelCount = fileSize / 6 + 1;
+	labelArray = (char*) calloc(6, maxLabelCount);
+	for (int lineCount = 0; ; ++lineCount) {
+
+		/* here is an example for how to use readAndParse to read a line from
+			inFilePtr */
+		if (!readAndParse(inFilePtr, label, opcode, arg0, arg1, arg2)) {
+			/* reached end of file */
+			break;
+		}
+		if (label[0]) {
+			printf("label[%d] : %s\n", lineCount, label);
+			addLabel(label, lineCount);
+		}
+	}
 
 	/* this is how to rewind the file ptr so that you start reading from the
 		 beginning of the file */
@@ -50,11 +75,73 @@ int main(int argc, char *argv[])
 
 	/* TODO: Phase-2 generate machine codes to outfile */
 
-	/* after doing a readAndParse, you may want to do the following to test the
-		 opcode */
-	if (!strcmp(opcode, "add")) {
-		/* do whatever you need to do for opcode "add" */
-	}
+	for (int lineCount = 0; ; ++lineCount) {
+		if (!readAndParse(inFilePtr, label, opcode, arg0, arg1, arg2)) {
+			/* reached end of file */
+			break;
+		}
+
+		/* after doing a readAndParse, you may want to do the following to test the
+			opcode */
+		int machineCodeBuffer = 0, iopcode = -1;
+		if (!strcmp(opcode, "add")) {
+			/* do whatever you need to do for opcode "add" */
+			iopcode = 0; 
+			int regA, regB, destReg;
+			if (getRtypeRegisters(arg0, arg1, arg2, &regA, &regB, &destReg)) printf("add register not integer\n");
+			machineCodeBuffer = getRtypeInstruction(iopcode, regA, regB, destReg);
+		}
+		else if (!strcmp(opcode, "nor")) {
+			iopcode = 1;
+			int regA, regB, destReg;
+			if (getRtypeRegisters(arg0, arg1, arg2, &regA, &regB, &destReg)) printf("nor register not integer\n");
+			machineCodeBuffer = getRtypeInstruction(iopcode, regA, regB, destReg);
+		}
+		else if (!strcmp(opcode, "lw")) {
+			iopcode = 2;
+			int regA, regB, offsetField;
+			if (getItypeRegisters(arg0, arg1, arg2, &regA, &regB, &offsetField, -1)) printf("lw register error\n");
+			machineCodeBuffer = getItypeInstruction(iopcode, regA, regB, offsetField);
+
+		}
+		else if (!strcmp(opcode, "sw")) {
+			iopcode = 3;
+			int regA, regB, offsetField;
+			if (getItypeRegisters(arg0, arg1, arg2, &regA, &regB, &offsetField, -1)) printf("sw register error\n");
+			machineCodeBuffer = getItypeInstruction(iopcode, regA, regB, offsetField);
+		}
+		else if (!strcmp(opcode, "beq")) {
+			iopcode = 4;
+			int regA, regB, offsetField;
+			if (getItypeRegisters(arg0, arg1, arg2, &regA, &regB, &offsetField, lineCount)) printf("beq register error\n");
+			machineCodeBuffer = getItypeInstruction(iopcode, regA, regB, offsetField);
+		}
+		else if (!strcmp(opcode, "jalr")) {
+			iopcode = 5;
+			int regA, regB;
+			if (getJtypeRegisters(arg0, arg1, &regA, &regB)) printf("jalr register error\n");
+			machineCodeBuffer = getJtypeInstruction(iopcode, regA, regB);
+		}
+		else if (!strcmp(opcode, "halt")) {
+			iopcode = 6;	
+			machineCodeBuffer = getOtypeInstruction(iopcode);
+		}
+		else if (!strcmp(opcode, "noop")) {
+			iopcode = 7;
+			machineCodeBuffer = getOtypeInstruction(iopcode);
+		}
+		else if (!strcmp(opcode, ".fill")) {
+			int regA = -1;
+			if (getFillRegister(arg0, &regA)) printf("fill register error\n");
+			machineCodeBuffer = regA;
+		}
+		else {
+			printf("opcode error\n");
+		}
+		printf("%s\t(address %d): %d (hex 0x%x)\n", opcode, lineCount, machineCodeBuffer, machineCodeBuffer);
+	} 
+
+	free(labelArray);
 
 	if (inFilePtr) {
 		fclose(inFilePtr);
@@ -114,10 +201,91 @@ int readAndParse(FILE *inFilePtr, char *label, char *opcode, char *arg0,
 	return(1);
 }
 
-int isNumber(char *string)
+int isNumber(char *string, int* pi)
 {
 	/* return 1 if string is a number */
-	int i;
-	return( (sscanf(string, "%d", &i)) == 1);
+	return( (sscanf(string, "%d", pi)) == 1);
 }
 
+int getFileSize(FILE* fp) {
+	fseek(fp, 0, SEEK_END);
+	int fileSize = ftell(fp);
+	rewind(fp);
+	return fileSize;
+}
+
+void addLabel(char* label, int lineCount) {
+	for (int i = 0; i < MAX_LABEL_SIZE; ++i) {
+		labelArray[i + lineCount * 6] = label[i];
+	}
+	++labelCount;
+}
+
+int labelToNumeric(char* label) {
+	for (int i = 0; i < maxLabelCount; ++i) {
+		for (int j = 0; j < 6; ++j) {
+			if (labelArray[i * 6 + j] != label[j]) break;
+			if (label[j] == '\0' || j == 5) return i;
+		}
+	}
+	return -1;
+}
+
+int getRtypeRegisters(char* a0, char* a1, char* a2, int* r0, int* r1, int* r2) {
+	if (!isNumber(a0, r0) | !isNumber(a1, r1) | !isNumber(a2, r2)) return 1;
+	return 0;
+}
+
+int getRtypeInstruction(int opcode, int regA, int regB, int destReg) {
+	int ret = 0;
+	ret |= (opcode & 0x7) << 22;
+	ret |= (regA & 0x7) << 19;
+	ret |= (regB & 0x7) << 16;
+	ret |= (destReg & 0x7) << 0;
+	return ret;
+}
+
+int getItypeRegisters(char* a0, char* a1, char* a2, int* r0, int* r1, int* r2, int curLine) {
+	if (!isNumber(a0, r0) | !isNumber(a1, r1)) return 1;
+	if (isNumber(a2, r2)) return 0;
+	*r2 = labelToNumeric(a2);
+	if (*r2 == -1) return 1;
+	*r2 -= curLine + 1;
+	return 0;
+}
+
+int getItypeInstruction(int opcode, int regA, int regB, int offsetField) {
+	int ret = 0;
+	ret |= (opcode & 0x7) << 22;
+	ret |= (regA & 0x7) << 19;
+	ret |= (regB & 0x7) << 16;
+	ret |= ((offsetField >> 31) & 0x1) << 15;
+	ret |= (offsetField & 0x7FFF);
+	return ret;
+}
+
+int getJtypeRegisters(char* a0, char* a1, int* r0, int* r1) {
+	if (!isNumber(a0, r0) | !isNumber(a1, r1)) return 1;
+	return 0;
+}
+
+int getJtypeInstruction(int opcode, int regA, int regB) {
+	int ret = 0;
+	ret |= (opcode & 0x7) << 22;
+	ret |= (regA & 0x7) << 19;
+	ret |= (regB & 0x7) << 16;
+	return ret;
+}
+
+int getOtypeInstruction(int opcode) {
+	int ret = 0;
+	ret |= (opcode & 0x7) << 22;
+	return ret;
+}
+
+int getFillRegister(char* a0, int* r0) {
+	if (isNumber(a0, r0)) return 0;
+	*r0 = labelToNumeric(a0);
+	if (*r0 == -1) return 1;
+	return 0;
+}
