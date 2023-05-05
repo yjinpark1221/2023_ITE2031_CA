@@ -20,6 +20,7 @@ int getJtypeRegisters(char* a0, char* a1, int* r0, int* r1);
 int getJtypeInstruction(int opcode, int regA, int regB);
 int getOtypeInstruction(int opcode);
 int getFillRegister(char* a0, int* r0);
+void panic(char*);
 
 char* labelArray;
 int labelCount, maxLabelCount;
@@ -53,8 +54,8 @@ int main(int argc, char *argv[])
 
 	/* TODO: Phase-1 label calculation */
 	int fileSize = getFileSize(inFilePtr);
-	maxLabelCount = fileSize / 6 + 1;
-	labelArray = (char*) calloc(6, maxLabelCount);
+	maxLabelCount = fileSize / MAX_LABEL_SIZE + 1;
+	labelArray = (char*) calloc(MAX_LABEL_SIZE, maxLabelCount);
 	for (int lineCount = 0; ; ++lineCount) {
 
 		/* here is an example for how to use readAndParse to read a line from
@@ -88,38 +89,53 @@ int main(int argc, char *argv[])
 			/* do whatever you need to do for opcode "add" */
 			iopcode = 0; 
 			int regA, regB, destReg;
-			if (getRtypeRegisters(arg0, arg1, arg2, &regA, &regB, &destReg)) printf("add register not integer\n");
+			if (getRtypeRegisters(arg0, arg1, arg2, &regA, &regB, &destReg)) panic("non-integer register arguments");
 			machineCodeBuffer = getRtypeInstruction(iopcode, regA, regB, destReg);
 		}
 		else if (!strcmp(opcode, "nor")) {
 			iopcode = 1;
 			int regA, regB, destReg;
-			if (getRtypeRegisters(arg0, arg1, arg2, &regA, &regB, &destReg)) printf("nor register not integer\n");
+			if (getRtypeRegisters(arg0, arg1, arg2, &regA, &regB, &destReg)) panic("non-integer register arguments");
 			machineCodeBuffer = getRtypeInstruction(iopcode, regA, regB, destReg);
 		}
 		else if (!strcmp(opcode, "lw")) {
 			iopcode = 2;
 			int regA, regB, offsetField;
-			if (getItypeRegisters(arg0, arg1, arg2, &regA, &regB, &offsetField, -1)) printf("lw register error\n");
+			
+			int res = getItypeRegisters(arg0, arg1, arg2, &regA, &regB, &offsetField, -1);
+			if (res == 1) {
+				panic("non-integer register arguments");
+			} else if (res == 2) {
+				panic("use of undefined labels");
+			}
 			machineCodeBuffer = getItypeInstruction(iopcode, regA, regB, offsetField);
-
 		}
 		else if (!strcmp(opcode, "sw")) {
 			iopcode = 3;
 			int regA, regB, offsetField;
-			if (getItypeRegisters(arg0, arg1, arg2, &regA, &regB, &offsetField, -1)) printf("sw register error\n");
+			int res = getItypeRegisters(arg0, arg1, arg2, &regA, &regB, &offsetField, -1);
+			if (res == 1) {
+				panic("non-integer register arguments");
+			} else if (res == 2) {
+				panic("use of undefined labels");
+			}
 			machineCodeBuffer = getItypeInstruction(iopcode, regA, regB, offsetField);
 		}
 		else if (!strcmp(opcode, "beq")) {
 			iopcode = 4;
 			int regA, regB, offsetField;
-			if (getItypeRegisters(arg0, arg1, arg2, &regA, &regB, &offsetField, lineCount)) printf("beq register error\n");
+			int res = getItypeRegisters(arg0, arg1, arg2, &regA, &regB, &offsetField, -1);
+			if (res == 1) {
+				panic("non-integer register arguments");
+			} else if (res == 2) {
+				panic("use of undefined labels");
+			}
 			machineCodeBuffer = getItypeInstruction(iopcode, regA, regB, offsetField);
 		}
 		else if (!strcmp(opcode, "jalr")) {
 			iopcode = 5;
 			int regA, regB;
-			if (getJtypeRegisters(arg0, arg1, &regA, &regB)) printf("jalr register error\n");
+			if (getJtypeRegisters(arg0, arg1, &regA, &regB)) panic("non-integer register arguments");
 			machineCodeBuffer = getJtypeInstruction(iopcode, regA, regB);
 		}
 		else if (!strcmp(opcode, "halt")) {
@@ -136,8 +152,9 @@ int main(int argc, char *argv[])
 			machineCodeBuffer = regA;
 		}
 		else {
-			printf("opcode error\n");
+			panic("unrecognized opcodes");
 		}
+		fprintf(outFilePtr, "%d\n", machineCodeBuffer);
 		printf("%s\t(address %d): %d (hex 0x%x)\n", opcode, lineCount, machineCodeBuffer, machineCodeBuffer);
 	} 
 
@@ -215,16 +232,24 @@ int getFileSize(FILE* fp) {
 }
 
 void addLabel(char* label, int lineCount) {
+	for (int i = 0; i < lineCount; ++i) {
+		for (int j = 0; j < MAX_LABEL_SIZE; ++j) {
+			if (labelArray[j + i * MAX_LABEL_SIZE] != label[j]) break;
+			if (j == MAX_LABEL_SIZE - 1) {
+				panic("Duplicate definition of labels");
+			}
+		}
+	}
 	for (int i = 0; i < MAX_LABEL_SIZE; ++i) {
-		labelArray[i + lineCount * 6] = label[i];
+		labelArray[i + lineCount * MAX_LABEL_SIZE] = label[i];
 	}
 	++labelCount;
 }
 
 int labelToNumeric(char* label) {
 	for (int i = 0; i < maxLabelCount; ++i) {
-		for (int j = 0; j < 6; ++j) {
-			if (labelArray[i * 6 + j] != label[j]) break;
+		for (int j = 0; j < MAX_LABEL_SIZE; ++j) {
+			if (labelArray[i * MAX_LABEL_SIZE + j] != label[j]) break;
 			if (label[j] == '\0' || j == 5) return i;
 		}
 	}
@@ -237,6 +262,7 @@ int getRtypeRegisters(char* a0, char* a1, char* a2, int* r0, int* r1, int* r2) {
 }
 
 int getRtypeInstruction(int opcode, int regA, int regB, int destReg) {
+	if (!inRange(regA) | !inRange(regB) | !inRange(destReg)) panic("Registers outside the range[0, 7]");
 	int ret = 0;
 	ret |= (opcode & 0x7) << 22;
 	ret |= (regA & 0x7) << 19;
@@ -249,12 +275,14 @@ int getItypeRegisters(char* a0, char* a1, char* a2, int* r0, int* r1, int* r2, i
 	if (!isNumber(a0, r0) | !isNumber(a1, r1)) return 1;
 	if (isNumber(a2, r2)) return 0;
 	*r2 = labelToNumeric(a2);
-	if (*r2 == -1) return 1;
+	if (*r2 == -1) return 2;
 	*r2 -= curLine + 1;
 	return 0;
 }
 
 int getItypeInstruction(int opcode, int regA, int regB, int offsetField) {
+	if (!inRange(regA) | !inRange(regB)) panic("Registers outside the range[0, 7]");
+	if (offsetField < -32768 || offsetField >= 32768) panic("offsetFields that don't fit in 16 bits");
 	int ret = 0;
 	ret |= (opcode & 0x7) << 22;
 	ret |= (regA & 0x7) << 19;
@@ -270,6 +298,7 @@ int getJtypeRegisters(char* a0, char* a1, int* r0, int* r1) {
 }
 
 int getJtypeInstruction(int opcode, int regA, int regB) {
+	if (!inRange(regA) | !inRange(regB)) panic("Registers outside the range[0, 7]");
 	int ret = 0;
 	ret |= (opcode & 0x7) << 22;
 	ret |= (regA & 0x7) << 19;
@@ -288,4 +317,14 @@ int getFillRegister(char* a0, int* r0) {
 	*r0 = labelToNumeric(a0);
 	if (*r0 == -1) return 1;
 	return 0;
+}
+
+void panic(char* msg) {
+	printf("[ERROR] %s\n", msg);
+	free(labelArray);
+	exit(1);
+}
+
+int inRange(int reg) {
+	return 0 <= reg && reg < 8;
 }
