@@ -81,7 +81,6 @@ int main(int argc, char *argv[])
         else if (opcode == 4) { // beq
             int regA, regB, offsetField;
             if (getItypeRegisters(instruction, &regA, &regB, &offsetField)) panic();
-            printf("offsetfield %d\n", offsetField);
             if (state.reg[regA] == state.reg[regB]) state.pc += offsetField; 
         }
         else if (opcode == 5) {
