@@ -21,6 +21,7 @@ int getJtypeInstruction(int opcode, int regA, int regB);
 int getOtypeInstruction(int opcode);
 int getFillRegister(char* a0, int* r0);
 void panic(char*);
+int inRange(int n);
 
 char* labelArray;
 int labelCount, maxLabelCount;
@@ -124,7 +125,7 @@ int main(int argc, char *argv[])
 		else if (!strcmp(opcode, "beq")) {
 			iopcode = 4;
 			int regA, regB, offsetField;
-			int res = getItypeRegisters(arg0, arg1, arg2, &regA, &regB, &offsetField, -1);
+			int res = getItypeRegisters(arg0, arg1, arg2, &regA, &regB, &offsetField, lineCount);
 			if (res == 1) {
 				panic("non-integer register arguments");
 			} else if (res == 2) {
