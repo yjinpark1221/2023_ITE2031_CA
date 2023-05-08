@@ -13,7 +13,7 @@ typedef struct stateStruct {
     int reg[NUMREGS];
     int numMemory;
 } stateType;
-
+int cnt;
 void printState(stateType *);
 int convertNum(int num);
 int getRtypeRegisters(int instruction, int* regA, int* regB, int* destReg);
@@ -56,6 +56,7 @@ int main(int argc, char *argv[])
     }
     for (state.pc = 0; ; state.pc++) {
         printState(&state);
+        ++cnt;
         int instruction = state.mem[state.pc];
         int opcode = getOpcode(instruction);
         if (opcode == 0) { // add
@@ -87,11 +88,11 @@ int main(int argc, char *argv[])
             int regA, regB;
             if (getJtypeRegisters(instruction, &regA, &regB)) panic();
             state.reg[regB] = state.pc + 1;
-            state.pc = state.reg[regB] - 1;
+            state.pc = state.reg[regA] - 1;
         }
         else if (opcode == 6) {
             ++state.pc;
-            printf("machine halted\ntotal of 17 instructions executed\nfinal state of machine:\n");
+            printf("machine halted\ntotal of %d instructions executed\nfinal state of machine:\n", cnt);
             printState(&state);
             break;
         }
