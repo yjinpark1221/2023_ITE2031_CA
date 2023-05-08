@@ -419,7 +419,7 @@ state:
 		reg[ 7 ] 0
 end state
 machine halted
-total of 17 instructions executed
+total of 14 instructions executed
 final state of machine:
 
 @@@

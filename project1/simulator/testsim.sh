@@ -1,4 +1,7 @@
 #!/bin/sh
-
 make
-./simulate.exe test5.mc > test5.out
+for var in 5 6 7 8
+do
+	echo $var
+	./simulate.exe test$var.mc > test$var.out
+done
